@@ -3,58 +3,32 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from datetime import datetime
 
-# 1. Page Setup
-st.set_page_config(page_title="Team Status Tracker", layout="wide")
-st.title("🕒 Real-Time Resource Monitor")
+st.set_page_config(page_title="Team Tracker", layout="wide")
 
-# 2. Connect to your Google Sheet
-# (You will provide the URL in the configuration later)
-conn = st.connection("gsheets", type=GSheetsConnection)
+# Connect to Google Sheets
+try:
+    conn = st.connection("gsheets", type=GSheetsConnection)
+    df = conn.read()
+except Exception as e:
+    st.error(f"Connection Error: {e}")
+    st.stop()
 
-# --- SIDEBAR: AGENT ACTIONS ---
+st.title("🕒 Resource Status Monitor")
+
+# Agent Input
 with st.sidebar:
-    st.header("Agent Portal")
-    name = st.text_input("Enter Your Name", placeholder="e.g. John Doe")
-    
-    st.write("Update your status:")
-    col1, col2 = st.columns(2)
-    
-    if name:
-        if col1.button("🟢 Login"):
-            new_row = pd.DataFrame([{"Timestamp": datetime.now(), "Name": name, "Status": "Logged In"}])
-            conn.create(data=new_row)
-            st.success("Logged In!")
+    name = st.text_input("Agent Name")
+    status = st.selectbox("Action", ["Logged In", "On Break", "Logged Out"])
+    if st.button("Update Status"):
+        new_data = pd.DataFrame([{"Timestamp": datetime.now(), "Name": name, "Status": status}])
+        updated_df = pd.concat([df, new_data], ignore_index=True)
+        conn.update(data=updated_df)
+        st.success("Status Updated!")
+        st.rerun()
 
-        if col2.button("🟠 Break"):
-            new_row = pd.DataFrame([{"Timestamp": datetime.now(), "Name": name, "Status": "On Break"}])
-            conn.create(data=new_row)
-            st.warning("On Break")
-
-        if st.button("🔴 Logout", use_container_width=True):
-            new_row = pd.DataFrame([{"Timestamp": datetime.now(), "Name": name, "Status": "Logged Out"}])
-            conn.create(data=new_row)
-            st.error("Logged Out")
-
-# --- MAIN PAGE: SUPERVISOR DASHBOARD ---
-st.subheader("Live Status Board")
-
-# Load data from Google Sheets
-df = conn.read()
-
+# Dashboard View
+st.subheader("Live Dashboard")
 if not df.empty:
-    # Logic: Get the latest entry for each person
-    df['Timestamp'] = pd.to_datetime(df['Timestamp'])
-    latest_updates = df.sort_values('Timestamp').groupby('Name').tail(1)
-    
-    # Visual Styling
-    def color_status(val):
-        color = 'green' if val == 'Logged In' else 'orange' if val == 'On Break' else 'red'
-        return f'background-color: {color}; color: white; font-weight: bold'
-
-    st.table(latest_updates.style.applymap(color_status, subset=['Status']))
-else:
-    st.info("No data yet. Agents need to check in!")
-
-# Auto-refresh button (Streamlit can also auto-refresh every XX seconds)
-if st.button('🔄 Refresh Dashboard'):
-    st.rerun()
+    # Get latest status per person
+    latest = df.sort_values("Timestamp").groupby("Name").tail(1)
+    st.dataframe(latest, use_container_width=True)
